@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Environment Variables
+.env
+.env.local
+
+# Hugging Face & PyTorch Cache
+.cache/
+huggingface/
+checkpoints/
+
+# Docker & Prometheus Data
+prometheus-data/
+grafana-data/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.log

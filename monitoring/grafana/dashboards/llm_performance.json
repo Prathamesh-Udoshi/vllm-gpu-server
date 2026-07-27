@@ -1,0 +1,93 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Time To First Token (TTFT - Prefill Latency)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(llm_time_to_first_token_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P90 TTFT (sec)"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(llm_time_to_first_token_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P99 TTFT (sec)"
+        }
+      ]
+    },
+    {
+      "title": "Time Per Output Token (TPOT - Decode Latency)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(llm_time_per_output_token_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P90 TPOT (sec)"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(llm_time_per_output_token_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P99 TPOT (sec)"
+        }
+      ]
+    },
+    {
+      "title": "Token Throughput (Tokens / Second)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(llm_completion_tokens_total[1m])",
+          "legendFormat": "Completion Tokens/sec"
+        },
+        {
+          "expr": "rate(llm_prompt_tokens_total[1m])",
+          "legendFormat": "Prompt Tokens/sec"
+        }
+      ]
+    },
+    {
+      "title": "Active Concurrent Requests (Running vs Queued)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "llm_num_requests_running",
+          "legendFormat": "Running Requests"
+        },
+        {
+          "expr": "llm_num_requests_waiting",
+          "legendFormat": "Queued Requests"
+        }
+      ]
+    },
+    {
+      "title": "vLLM KV Cache Memory Utilization (%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "llm_kv_cache_usage_fraction * 100",
+          "legendFormat": "KV Cache Usage (%)"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["vLLM", "LLM", "AI-Infrastructure"],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "vLLM Enterprise Inference Platform Metrics"
+}

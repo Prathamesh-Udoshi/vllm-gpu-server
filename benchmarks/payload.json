@@ -1,0 +1,15 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful, concise AI technical assistant."
+    },
+    {
+      "role": "user",
+      "content": "Explain the architectural differences between static batching and continuous iteration-level batching in LLM inference servers. Provide concrete examples."
+    }
+  ],
+  "max_tokens": 256,
+  "temperature": 0.7,
+  "stream": true
+}
