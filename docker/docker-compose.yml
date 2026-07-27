@@ -15,10 +15,19 @@ services:
       - QUANTIZATION=${QUANTIZATION:-}
       - GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.90}
       - MAX_MODEL_LEN=${MAX_MODEL_LEN:-4096}
+      - MAX_NUM_SEQS=${MAX_NUM_SEQS:-256}
       - DEVICE=${DEVICE:-cuda}
+      - API_KEY=${API_KEY:-}
+      - DOWNLOAD_DIR=/workspace/.cache/huggingface
     volumes:
       - hf-cache:/workspace/.cache/huggingface
-    # Reserve GPU device for CUDA execution
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vllm-network
     deploy:
       resources:
         reservations:
@@ -41,6 +50,13 @@ services:
       - "443:443"
     volumes:
       - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - vllm-network
     depends_on:
       vllm-api:
         condition: service_healthy
@@ -49,26 +65,63 @@ services:
     image: prom/prometheus:latest
     container_name: vllm-prometheus
     restart: unless-stopped
+    profiles: ["monitoring"]
     ports:
       - "9090:9090"
     volumes:
       - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    networks:
+      - vllm-network
 
   grafana:
     image: grafana/grafana:latest
     container_name: vllm-grafana
     restart: unless-stopped
+    profiles: ["monitoring"]
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
+    networks:
+      - vllm-network
     depends_on:
       - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: vllm-node-exporter
+    restart: unless-stopped
+    profiles: ["exporters"]
+    ports:
+      - "9100:9100"
+    networks:
+      - vllm-network
+
+  dcgm-exporter:
+    image: nvidia/dcgm-exporter:latest
+    container_name: vllm-dcgm-exporter
+    restart: unless-stopped
+    profiles: ["exporters"]
+    ports:
+      - "9400:9400"
+    networks:
+      - vllm-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  vllm-network:
+    driver: bridge
 
 volumes:
   hf-cache:

@@ -1,29 +1,41 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# One-Click Deployment Script for GCP Compute Engine GPU VM
+# Production Deployment Script for GCP VM
+# Supports Docker Profiles (API-Only vs Full Monitoring), Model selection & API Key
 # ==============================================================================
 
 set -euo pipefail
 
 MODEL_NAME="${1:-Qwen/Qwen2.5-0.5B-Instruct}"
 QUANTIZATION="${2:-}"
+PROFILES="${3:-}"  # Options: "" (API-Only), "monitoring", or "monitoring,exporters"
 
 echo "======================================================================"
 echo " Deploying Enterprise vLLM Stack on GCP VM"
-echo " Model: ${MODEL_NAME}"
-echo " Quantization: ${QUANTIZATION:-None}"
+echo " Model Target : ${MODEL_NAME}"
+echo " Quantization : ${QUANTIZATION:-None}"
+echo " Profiles     : ${PROFILES:-Default (API + Nginx only)}"
 echo "======================================================================"
 
 export MODEL_NAME="${MODEL_NAME}"
 export QUANTIZATION="${QUANTIZATION}"
 
-# Bring down existing containers if any
-docker compose -f docker/docker-compose.yml down --remove-orphans || true
+# Determine Docker Compose profile flags
+PROFILE_FLAGS=""
+if [ -n "${PROFILES}" ]; then
+    IFS=',' read -ra ADDR <<< "${PROFILES}"
+    for i in "${ADDR[@]}"; do
+        PROFILE_FLAGS="${PROFILE_FLAGS} --profile ${i}"
+    done
+fi
 
-# Build and launch multi-service stack in detached mode
-docker compose -f docker/docker-compose.yml up -d --build
+# Stop existing containers if running
+docker compose -f docker/docker-compose.yml ${PROFILE_FLAGS} down --remove-orphans || true
 
-echo "Waiting for vLLM API service to become healthy..."
+# Build & launch stack
+docker compose -f docker/docker-compose.yml ${PROFILE_FLAGS} up -d --build
+
+echo "Waiting for vLLM API service healthcheck..."
 until [ "$(docker inspect --format='{{.State.Health.Status}}' vllm-api-service 2>/dev/null)" == "healthy" ]; do
     echo -n "."
     sleep 3
@@ -34,7 +46,9 @@ echo "======================================================================"
 echo " 🎉 vLLM Platform successfully deployed!"
 echo "----------------------------------------------------------------------"
 echo " API Endpoint       : http://localhost/v1/chat/completions"
-echo " Prometheus Metrics : http://localhost/metrics (or via Prometheus :9090)"
-echo " Grafana Dashboard  : http://localhost:3000 (User: admin / Pass: admin)"
 echo " Health Endpoint    : http://localhost/health/ready"
+if [[ "${PROFILES}" == *"monitoring"* ]]; then
+    echo " Prometheus Metrics : http://localhost:9090"
+    echo " Grafana Dashboard  : http://localhost:3000 (User: admin / Pass: admin)"
+fi
 echo "======================================================================"

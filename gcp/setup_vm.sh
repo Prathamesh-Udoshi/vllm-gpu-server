@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Automated GCP Compute Engine GPU VM Setup Script
-# Target OS: Ubuntu 22.04 LTS (x86_64) with NVIDIA GPU (T4 / L4 / A10G / A100)
+# Idempotent GCP Compute Engine GPU VM Environment Setup Script
+# Configures CUDA drivers, Docker, NVIDIA Container Toolkit, and Systemd Service
 # ==============================================================================
 
 set -euo pipefail
 
 echo "======================================================================"
-echo " Starting GCP GPU VM Environment Setup for vLLM Platform"
+echo " Starting GCP GPU VM Production Environment Setup"
 echo "======================================================================"
 
 # 1. Update system packages
-echo "[1/5] Updating system packages..."
+echo "[1/6] Updating system packages..."
 sudo apt-get update -y && sudo apt-get upgrade -y
 sudo apt-get install -y build-essential curl wget git jq ca-certificates gnupg lsb-release
 
 # 2. Install NVIDIA CUDA Driver (535 headless driver)
-echo "[2/5] Installing NVIDIA GPU CUDA Driver..."
+echo "[2/6] Verifying NVIDIA GPU Driver..."
 if ! command -v nvidia-smi &> /dev/null; then
+    echo "Installing NVIDIA CUDA Driver 535..."
     sudo apt-get install -y linux-headers-$(uname -r)
     sudo apt-get install -y nvidia-driver-535-server nvidia-utils-535-server
     echo "✓ NVIDIA CUDA Driver installed successfully."
@@ -27,7 +28,7 @@ else
 fi
 
 # 3. Install Docker Engine
-echo "[3/5] Installing Docker Engine..."
+echo "[3/6] Verifying Docker Engine..."
 if ! command -v docker &> /dev/null; then
     sudo mkdir -p /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -43,8 +44,8 @@ else
     echo "✓ Docker already installed."
 fi
 
-# 4. Install NVIDIA Container Toolkit (GPU passthrough for Docker)
-echo "[4/5] Installing NVIDIA Container Toolkit..."
+# 4. Install NVIDIA Container Toolkit
+echo "[4/6] Verifying NVIDIA Container Toolkit..."
 if ! dpkg -l | grep -q nvidia-container-toolkit; then
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
     curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
@@ -55,19 +56,46 @@ if ! dpkg -l | grep -q nvidia-container-toolkit; then
     sudo apt-get install -y nvidia-container-toolkit
     sudo nvidia-ctk runtime configure --runtime=docker
     sudo systemctl restart docker
-    echo "✓ NVIDIA Container Toolkit installed & Docker configured."
+    echo "✓ NVIDIA Container Toolkit configured."
 else
     echo "✓ NVIDIA Container Toolkit already configured."
 fi
 
-# 5. Verify Setup
-echo "[5/5] Verifying GPU access from inside Docker container..."
+# 5. Configure Systemd Auto-Recovery Service for VM Reboots
+echo "[5/6] Registering Systemd auto-recovery service..."
+SERVICE_PATH="/etc/systemd/system/vllm-platform.service"
+CURRENT_DIR=$(pwd)
+
+sudo bash -c "cat <<EOF > ${SERVICE_PATH}
+[Unit]
+Description=vLLM Production Inference Platform Service
+After=docker.service nvidia-persistenced.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=${CURRENT_DIR}
+ExecStart=/usr/bin/docker compose -f docker/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f docker/docker-compose.yml stop
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+sudo systemctl daemon-reload
+sudo systemctl enable vllm-platform.service
+echo "✓ Systemd service 'vllm-platform.service' registered and enabled for auto-boot recovery."
+
+# 6. Verify GPU access from Docker
+echo "[6/6] Testing GPU passthrough inside Docker..."
 sudo docker run --rm --gpus all nvidia/cuda:12.1.1-base-ubuntu22.04 nvidia-smi || {
-    echo "⚠️ Warning: System reboot may be required to activate NVIDIA driver modules."
-    echo "Run 'sudo reboot' and then run this script once more."
+    echo "⚠️ Warning: System reboot recommended to initialize CUDA driver modules."
+    echo "Run 'sudo reboot' then run deploy_vm.sh."
     exit 0
 }
 
 echo "======================================================================"
-echo " 🎉 GCP GPU VM Setup Complete! You are ready to deploy vLLM."
+echo " 🎉 Environment Setup Complete! System is ready for deployment."
 echo "======================================================================"

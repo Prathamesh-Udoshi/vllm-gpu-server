@@ -1,12 +1,18 @@
 import time
 from typing import List, Optional, Union, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 # --- Request Schemas ---
 
 class ChatMessage(BaseModel):
     role: str = Field(..., description="Role of the author (system, user, assistant)")
     content: str = Field(..., description="Contents of the message")
+
+    @validator('role')
+    def validate_role(cls, v):
+        if v not in ('system', 'user', 'assistant', 'function', 'tool'):
+            raise ValueError(f"Invalid message role: {v}")
+        return v
 
 class ChatCompletionRequest(BaseModel):
     model: str = Field(..., description="ID of the model to use")
@@ -73,3 +79,14 @@ class ModelCard(BaseModel):
 class ModelList(BaseModel):
     object: str = "list"
     data: List[ModelCard]
+
+# --- Error Schemas ---
+
+class ErrorDetail(BaseModel):
+    message: str
+    type: str
+    param: Optional[str] = None
+    code: Optional[Union[int, str]] = None
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail

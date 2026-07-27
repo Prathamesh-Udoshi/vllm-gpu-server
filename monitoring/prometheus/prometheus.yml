@@ -10,3 +10,17 @@ scrape_configs:
         labels:
           environment: 'production'
           service: 'llm-inference-engine'
+
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          environment: 'production'
+          service: 'node-exporter'
+
+  - job_name: 'dcgm_exporter'
+    static_configs:
+      - targets: ['dcgm-exporter:9400']
+        labels:
+          environment: 'production'
+          service: 'gpu-dcgm-exporter'

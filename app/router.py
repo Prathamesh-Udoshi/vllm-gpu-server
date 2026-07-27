@@ -1,5 +1,6 @@
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Security, Header
+from fastapi.security.api_key import APIKeyHeader
 from fastapi.responses import StreamingResponse
 
 from vllm.sampling_params import SamplingParams
@@ -7,7 +8,6 @@ from vllm.sampling_params import SamplingParams
 from app.config import settings
 from app.schemas import (
     ChatCompletionRequest,
-    ChatCompletionResponse,
     CompletionRequest,
     ModelList,
     ModelCard
@@ -16,7 +16,34 @@ from app.engine import llm_engine
 
 router = APIRouter()
 
-@router.get("/v1/models", response_model=ModelList)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(
+    api_key: str = Security(api_key_header),
+    authorization: str = Header(None)
+):
+    """
+    Verify API Key if settings.API_KEY is configured.
+    Supports either X-API-Key header or Authorization: Bearer <key>.
+    """
+    if not settings.API_KEY:
+        return True  # Authentication disabled
+
+    token = api_key
+    if not token and authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:].strip()
+        else:
+            token = authorization.strip()
+
+    if token != settings.API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"message": "Invalid or missing API key.", "type": "authentication_error", "code": 401}}
+        )
+    return True
+
+@router.get("/v1/models", response_model=ModelList, dependencies=[Depends(verify_api_key)])
 async def list_models():
     """List loaded model details in OpenAI compatible format."""
     return ModelList(
@@ -25,7 +52,7 @@ async def list_models():
         ]
     )
 
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat/completions", dependencies=[Depends(verify_api_key)])
 async def create_chat_completion(request: ChatCompletionRequest):
     """
     OpenAI-compatible Chat Completions API.
@@ -35,12 +62,10 @@ async def create_chat_completion(request: ChatCompletionRequest):
         raise HTTPException(status_code=503, detail="vLLM engine is initializing or unavailable")
 
     request_id = f"cmpl-{uuid.uuid4().hex[:12]}"
-    
-    # Format messages into prompt
+
     messages_dicts = [{"role": msg.role, "content": msg.content} for msg in request.messages]
     prompt = llm_engine.build_prompt_from_messages(messages_dicts)
 
-    # Process stop sequences
     stop_sequences = []
     if request.stop:
         if isinstance(request.stop, str):
@@ -69,19 +94,18 @@ async def create_chat_completion(request: ChatCompletionRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"  # Disable Nginx buffering explicitly
+                "X-Accel-Buffering": "no"
             }
         )
     else:
-        response_payload = await llm_engine.generate_non_stream(
+        return await llm_engine.generate_non_stream(
             request_id=request_id,
             prompt=prompt,
             sampling_params=sampling_params,
             model_name=request.model or settings.MODEL_NAME
         )
-        return response_payload
 
-@router.post("/v1/completions")
+@router.post("/v1/completions", dependencies=[Depends(verify_api_key)])
 async def create_completion(request: CompletionRequest):
     """Standard text completion endpoint."""
     if not llm_engine.engine:

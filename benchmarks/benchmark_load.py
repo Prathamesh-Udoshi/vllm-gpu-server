@@ -9,7 +9,8 @@ async def send_streaming_request(
     session: aiohttp.ClientSession,
     url: str,
     payload: dict,
-    request_id: int
+    request_id: int,
+    api_key: str | None = None
 ):
     """
     Send a single streaming request to vLLM endpoint and record TTFT, TPOT, total duration.
@@ -21,7 +22,10 @@ async def send_streaming_request(
     tpot_list = []
 
     headers = {"Content-Type": "application/json"}
-    
+    if api_key:
+        headers["X-API-Key"] = api_key
+        headers["Authorization"] = f"Bearer {api_key}"
+
     try:
         async with session.post(url, json=payload, headers=headers) as response:
             if response.status != 200:
@@ -65,14 +69,13 @@ async def send_streaming_request(
             "error": str(e)
         }
 
-async def run_benchmark(url: str, payload_path: str, concurrency: int, total_requests: int):
+async def run_benchmark(url: str, payload_path: str, concurrency: int, total_requests: int, api_key: str | None = None):
     """
     Run concurrent benchmark load test against the API.
     """
     with open(payload_path, 'r') as f:
         payload_base = json.load(f)
 
-    # Ensure stream mode is active for TTFT/TPOT measurement
     payload_base["stream"] = True
     if "model" not in payload_base:
         payload_base["model"] = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -95,14 +98,13 @@ async def run_benchmark(url: str, payload_path: str, concurrency: int, total_req
 
         async def worker(req_id: int):
             async with semaphore:
-                return await send_streaming_request(session, url, payload_base, req_id)
+                return await send_streaming_request(session, url, payload_base, req_id, api_key=api_key)
 
         tasks = [worker(i) for i in range(total_requests)]
         results = await asyncio.gather(*tasks)
 
     total_bench_duration = time.perf_counter() - start_bench_time
 
-    # Process metrics
     successful_results = [r for r in results if r.get("success")]
     failed_results = [r for r in results if not r.get("success")]
 
@@ -159,6 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--payload", type=str, default="benchmarks/payload.json", help="Path to JSON payload")
     parser.add_argument("--concurrency", type=int, default=10, help="Number of concurrent streams")
     parser.add_argument("--requests", type=int, default=50, help="Total number of requests")
+    parser.add_argument("--api-key", type=str, default=None, help="Optional API key")
 
     args = parser.parse_args()
-    asyncio.run(run_benchmark(args.url, args.payload, args.concurrency, args.requests))
+    asyncio.run(run_benchmark(args.url, args.payload, args.concurrency, args.requests, api_key=args.api_key))

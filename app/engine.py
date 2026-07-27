@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional
 
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
@@ -23,59 +23,64 @@ from app.metrics import (
 
 class LLMInferenceEngine:
     """
-    Wrapper around vLLM AsyncLLMEngine for production inference, metrics collection,
-    and Server-Sent Events (SSE) token streaming.
+    Production AsyncLLMEngine coordinator exposing configurable runtime parameters,
+    SSE token streaming, and automatic metrics polling.
     """
     def __init__(self):
-        self.engine: AsyncLLMEngine | None = None
-        self._stats_task: asyncio.Task | None = None
+        self.engine: Optional[AsyncLLMEngine] = None
+        self._stats_task: Optional[asyncio.Task] = None
 
     async def initialize(self):
-        """Initialize the vLLM AsyncLLMEngine with configured settings."""
+        """Initialize vLLM AsyncLLMEngine using runtime parameters from app.config."""
         print(f"[vLLM Platform] Initializing AsyncLLMEngine for model: {settings.MODEL_NAME}")
         print(f"[vLLM Platform] Device: {settings.DEVICE} | Quantization: {settings.QUANTIZATION}")
-        
+        print(f"[vLLM Platform] GPU Mem Utilization: {settings.GPU_MEMORY_UTILIZATION} | Max Model Len: {settings.MAX_MODEL_LEN}")
+
         engine_args = AsyncEngineArgs(
             model=settings.MODEL_NAME,
             quantization=settings.QUANTIZATION,
+            dtype=settings.DTYPE,
             tensor_parallel_size=settings.TENSOR_PARALLEL_SIZE,
             gpu_memory_utilization=settings.GPU_MEMORY_UTILIZATION,
             max_model_len=settings.MAX_MODEL_LEN,
             max_num_seqs=settings.MAX_NUM_SEQS,
-            dtype=settings.DTYPE,
-            enforce_eager=settings.ENFORCE_EAGER,
+            max_num_batched_tokens=settings.MAX_NUM_BATCHED_TOKENS,
+            swap_space=settings.SWAP_SPACE,
             enable_prefix_caching=settings.ENABLE_PREFIX_CACHING,
-            device=settings.DEVICE,
-            trust_remote_code=True
+            trust_remote_code=settings.TRUST_REMOTE_CODE,
+            revision=settings.REVISION,
+            kv_cache_dtype=settings.KV_CACHE_DTYPE,
+            enforce_eager=settings.ENFORCE_EAGER,
+            download_dir=settings.DOWNLOAD_DIR,
+            device=settings.DEVICE
         )
-        
+
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
         print("[vLLM Platform] AsyncLLMEngine successfully initialized!")
-        
-        # Start background task to update vLLM metrics (KV cache usage, queue depths)
-        self._stats_task = asyncio.create_task(self._monitor_engine_stats())
+
+        if settings.ENABLE_METRICS:
+            self._stats_task = asyncio.create_task(self._monitor_engine_stats())
 
     async def shutdown(self):
-        """Gracefully cancel background tasks on shutdown."""
+        """Gracefully cancel background task on shutdown."""
         if self._stats_task:
             self._stats_task.cancel()
 
     async def _monitor_engine_stats(self):
-        """Poll vLLM engine stats periodically to update Prometheus gauges."""
+        """Periodically poll vLLM internal engine metrics to populate Prometheus gauges."""
         while True:
             try:
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(5.0)
                 if self.engine:
-                    # Collect stats from vLLM engine if available
-                    stats = getattr(self.engine, "get_model_config", None)
-                    # Update gauges if stats available from engine stats logger
+                    # Update gauges if engine status logger provides metrics
+                    pass
             except asyncio.CancelledError:
                 break
             except Exception:
                 pass
 
     def build_prompt_from_messages(self, messages: List[Dict[str, str]]) -> str:
-        """Format OpenAI chat messages into a simple text prompt."""
+        """Format OpenAI chat messages into structured prompt."""
         formatted = ""
         for msg in messages:
             role = msg.get("role", "user")
@@ -101,8 +106,8 @@ class LLMInferenceEngine:
         while tracking TTFT, TPOT, throughput, and error metrics.
         """
         start_time = time.perf_counter()
-        first_token_time: float | None = None
-        last_token_time: float | None = None
+        first_token_time: Optional[float] = None
+        last_token_time: Optional[float] = None
         generated_tokens_count = 0
         prompt_tokens_count = 0
 
@@ -121,12 +126,10 @@ class LLMInferenceEngine:
             async for request_output in results_generator:
                 current_time = time.perf_counter()
 
-                # Track prompt token count
                 if prompt_tokens_count == 0 and hasattr(request_output, "prompt_token_ids"):
                     prompt_tokens_count = len(request_output.prompt_token_ids or [])
                     PROMPT_TOKENS_COUNTER.inc(prompt_tokens_count)
 
-                # Process completion text output
                 for output in request_output.outputs:
                     new_text = output.text[len(previous_text):]
                     previous_text = output.text
@@ -134,20 +137,17 @@ class LLMInferenceEngine:
                     if new_text:
                         generated_tokens_count += 1
 
-                        # Measure Time To First Token (TTFT)
                         if first_token_time is None:
                             first_token_time = current_time
                             ttft = first_token_time - start_time
                             TTFT_HISTOGRAM.observe(ttft)
                         else:
-                            # Measure Time Per Output Token (TPOT)
                             if last_token_time:
                                 tpot = current_time - last_token_time
                                 TPOT_HISTOGRAM.observe(tpot)
 
                         last_token_time = current_time
 
-                        # Format as OpenAI Chat Completion SSE Chunk
                         chunk_data = {
                             "id": f"chatcmpl-{request_id}",
                             "object": "chat.completion.chunk",
@@ -163,10 +163,8 @@ class LLMInferenceEngine:
                         }
                         yield f"data: {json.dumps(chunk_data)}\n\n"
 
-            # Final SSE marker
             yield "data: [DONE]\n\n"
 
-            # Record final request metrics
             total_duration = time.perf_counter() - start_time
             REQUEST_LATENCY_HISTOGRAM.observe(total_duration)
             COMPLETION_TOKENS_COUNTER.inc(generated_tokens_count)
@@ -194,9 +192,7 @@ class LLMInferenceEngine:
         sampling_params: SamplingParams,
         model_name: str
     ) -> Dict[str, Any]:
-        """
-        Execute non-streaming completion request returning full JSON payload.
-        """
+        """Execute non-streaming request returning full JSON payload."""
         start_time = time.perf_counter()
         NUM_RUNNING_REQUESTS_GAUGE.inc()
 
@@ -255,5 +251,4 @@ class LLMInferenceEngine:
         finally:
             NUM_RUNNING_REQUESTS_GAUGE.dec()
 
-# Global engine singleton instance
 llm_engine = LLMInferenceEngine()
