@@ -19,6 +19,8 @@ services:
       - DEVICE=${DEVICE:-cuda}
       - API_KEY=${API_KEY:-}
       - DOWNLOAD_DIR=/workspace/.cache/huggingface
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
     volumes:
       - hf-cache:/workspace/.cache/huggingface
     logging:

@@ -20,6 +20,12 @@ echo "======================================================================"
 export MODEL_NAME="${MODEL_NAME}"
 export QUANTIZATION="${QUANTIZATION}"
 
+# Auto-detect docker command permission
+DOCKER_CMD="docker"
+if ! docker info &>/dev/null; then
+    DOCKER_CMD="sudo docker"
+fi
+
 # Determine Docker Compose profile flags
 PROFILE_FLAGS=""
 if [ -n "${PROFILES}" ]; then
@@ -30,13 +36,13 @@ if [ -n "${PROFILES}" ]; then
 fi
 
 # Stop existing containers if running
-docker compose -f docker/docker-compose.yml ${PROFILE_FLAGS} down --remove-orphans || true
+${DOCKER_CMD} compose -f docker/docker-compose.yml ${PROFILE_FLAGS} down --remove-orphans || true
 
 # Build & launch stack
-docker compose -f docker/docker-compose.yml ${PROFILE_FLAGS} up -d --build
+${DOCKER_CMD} compose -f docker/docker-compose.yml ${PROFILE_FLAGS} up -d --build
 
 echo "Waiting for vLLM API service healthcheck..."
-until [ "$(docker inspect --format='{{.State.Health.Status}}' vllm-api-service 2>/dev/null)" == "healthy" ]; do
+until [ "$(${DOCKER_CMD} inspect --format='{{.State.Health.Status}}' vllm-api-service 2>/dev/null)" == "healthy" ]; do
     echo -n "."
     sleep 3
 done

@@ -11,8 +11,8 @@ echo " Starting GCP GPU VM Production Environment Setup"
 echo "======================================================================"
 
 # 1. Update system packages
-echo "[1/6] Updating system packages..."
-sudo apt-get update -y && sudo apt-get upgrade -y
+echo "[1/6] Updating system package index..."
+sudo apt-get update -y
 sudo apt-get install -y build-essential curl wget git jq ca-certificates gnupg lsb-release
 
 # 2. Install NVIDIA CUDA Driver (535 headless driver)
@@ -42,6 +42,7 @@ if ! command -v docker &> /dev/null; then
     echo "✓ Docker installed successfully."
 else
     echo "✓ Docker already installed."
+    sudo usermod -aG docker $USER || true
 fi
 
 # 4. Install NVIDIA Container Toolkit

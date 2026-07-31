@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ENFORCE_EAGER: bool = os.getenv("ENFORCE_EAGER", "False").lower() in ("true", "1")
     DOWNLOAD_DIR: str = os.getenv("DOWNLOAD_DIR", "/workspace/.cache/huggingface")
     DEVICE: str = os.getenv("DEVICE", "cuda")  # 'cuda' or 'cpu'
+    HF_TOKEN: Optional[str] = os.getenv("HF_TOKEN", None)
 
     # --- Security & Authentication ---
     API_KEY: Optional[str] = os.getenv("API_KEY", None)  # Optional API key protection
