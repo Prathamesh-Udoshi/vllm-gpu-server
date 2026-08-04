@@ -33,26 +33,29 @@ class LLMInferenceEngine:
     async def initialize(self):
         """Initialize vLLM AsyncLLMEngine using runtime parameters from app.config."""
         print(f"[vLLM Platform] Initializing AsyncLLMEngine for model: {settings.MODEL_NAME}")
-        print(f"[vLLM Platform] Device: {settings.DEVICE} | Quantization: {settings.QUANTIZATION}")
+        print(f"[vLLM Platform] Platform: Auto-detected (CUDA) | Quantization: {settings.QUANTIZATION}")
         print(f"[vLLM Platform] GPU Mem Utilization: {settings.GPU_MEMORY_UTILIZATION} | Max Model Len: {settings.MAX_MODEL_LEN}")
+        
+        quantization = settings.QUANTIZATION or None
+        revision = settings.REVISION or None
+        kv_cache_dtype = settings.KV_CACHE_DTYPE or None
+        download_dir = settings.DOWNLOAD_DIR or None
 
         engine_args = AsyncEngineArgs(
             model=settings.MODEL_NAME,
-            quantization=settings.QUANTIZATION,
+            quantization=quantization,
             dtype=settings.DTYPE,
             tensor_parallel_size=settings.TENSOR_PARALLEL_SIZE,
             gpu_memory_utilization=settings.GPU_MEMORY_UTILIZATION,
             max_model_len=settings.MAX_MODEL_LEN,
             max_num_seqs=settings.MAX_NUM_SEQS,
             max_num_batched_tokens=settings.MAX_NUM_BATCHED_TOKENS,
-            swap_space=settings.SWAP_SPACE,
             enable_prefix_caching=settings.ENABLE_PREFIX_CACHING,
             trust_remote_code=settings.TRUST_REMOTE_CODE,
-            revision=settings.REVISION,
-            kv_cache_dtype=settings.KV_CACHE_DTYPE,
+            revision=revision,
+            kv_cache_dtype=kv_cache_dtype,
             enforce_eager=settings.ENFORCE_EAGER,
-            download_dir=settings.DOWNLOAD_DIR,
-            device=settings.DEVICE
+            download_dir=download_dir,
         )
 
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)

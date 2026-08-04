@@ -22,20 +22,16 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 WORKDIR /workspace
 
-# Install PyTorch with CUDA 12.1 support first for caching layer
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
 # Install vLLM and API server requirements
 RUN pip install --no-cache-dir \
-    vllm \
+    vllm==0.26.0 \
     fastapi \
     uvicorn \
     pydantic \
     pydantic-settings \
     prometheus_client \
     requests \
-    aiohttp \
-    triton
+    aiohttp
 
 # Copy application source code
 COPY app/ /workspace/app/
@@ -43,7 +39,7 @@ COPY app/ /workspace/app/
 # Expose port
 EXPOSE 8000
 
-# Set Hugging Face cache directory to a persistent location
+# Set Hugging Face cache directory
 ENV HF_HOME=/workspace/.cache/huggingface
 
 # Healthcheck

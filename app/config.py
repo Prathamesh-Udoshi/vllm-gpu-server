@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     KV_CACHE_DTYPE: str = os.getenv("KV_CACHE_DTYPE", "auto")  # Options: 'auto', 'fp8'
     ENFORCE_EAGER: bool = os.getenv("ENFORCE_EAGER", "False").lower() in ("true", "1")
     DOWNLOAD_DIR: str = os.getenv("DOWNLOAD_DIR", "/workspace/.cache/huggingface")
-    DEVICE: str = os.getenv("DEVICE", "cuda")  # 'cuda' or 'cpu'
     HF_TOKEN: Optional[str] = os.getenv("HF_TOKEN", None)
 
     # --- Security & Authentication ---

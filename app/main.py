@@ -1,5 +1,6 @@
 import time
 import uuid
+import traceback
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -25,12 +26,16 @@ async def lifespan(app: FastAPI):
     Initializes vLLM AsyncLLMEngine on startup and shuts down gracefully.
     """
     logger.info(f"Starting server on {settings.HOST}:{settings.PORT}...")
+
     try:
         await llm_engine.initialize()
-    except Exception as e:
-        logger.warning(f"Failed to initialize vLLM engine: {e}")
-        logger.warning("Ensure CUDA GPU or PyTorch CPU environment is configured.")
+    except Exception:
+        logger.exception("Failed to initialize vLLM engine")
+        traceback.print_exc()
+        raise
+
     yield
+
     logger.info("Shutting down inference platform...")
     await llm_engine.shutdown()
 
