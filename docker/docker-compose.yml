@@ -67,6 +67,12 @@ services:
     container_name: vllm-prometheus
     restart: unless-stopped
     profiles: ["monitoring"]
+    
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.external-url=/prometheus
+      - --web.route-prefix=/
+
     ports:
       - "9090:9090"
     volumes:
@@ -82,9 +88,13 @@ services:
     profiles: ["monitoring"]
     ports:
       - "3000:3000"
+    
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+
     volumes:
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
