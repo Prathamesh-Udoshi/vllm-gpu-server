@@ -116,6 +116,9 @@ class LLMInferenceEngine:
 
         created_timestamp = int(time.time())
         NUM_RUNNING_REQUESTS_GAUGE.inc()
+        
+        if self.engine is None:
+            raise RuntimeError("LLM engine has not been initialized.")
 
         try:
             results_generator = self.engine.generate(
@@ -152,7 +155,7 @@ class LLMInferenceEngine:
                         elif last_token_time is not None:
                             TPOT_HISTOGRAM.observe(
                                 (current_time - last_token_time) / new_tokens
-                            )
+                            )           
 
                         last_token_time = current_time
                         previous_num_tokens = current_num_tokens
@@ -208,6 +211,9 @@ class LLMInferenceEngine:
         """Execute non-streaming request returning full JSON payload."""
         start_time = time.perf_counter()
         NUM_RUNNING_REQUESTS_GAUGE.inc()
+        
+        if self.engine is None:
+            raise RuntimeError("LLM engine has not been initialized.")
 
         try:
             results_generator = self.engine.generate(
@@ -217,8 +223,43 @@ class LLMInferenceEngine:
             )
 
             final_output = None
+
+            first_token_time = None
+            last_token_time = None
+            previous_num_tokens = 0
+
             async for request_output in results_generator:
-                final_output = request_output                                                                  
+
+                current_time = time.perf_counter()
+
+                if request_output.outputs:
+
+                    output = request_output.outputs[0]
+
+                    current_num_tokens = len(output.token_ids or [])
+
+                    # TTFT
+                    if first_token_time is None and current_num_tokens > 0:
+                        first_token_time = current_time
+                        TTFT_HISTOGRAM.observe(first_token_time - start_time)
+
+                    # TPOT
+                    if (
+                        last_token_time is not None
+                        and current_num_tokens > previous_num_tokens
+                    ):
+                        new_tokens = current_num_tokens - previous_num_tokens
+
+                        TPOT_HISTOGRAM.observe(
+                            (current_time - last_token_time) / new_tokens
+                        )
+
+                    if current_num_tokens > previous_num_tokens:
+                        last_token_time = current_time
+                        previous_num_tokens = current_num_tokens
+
+                final_output = request_output
+
             total_duration = time.perf_counter() - start_time
             REQUEST_LATENCY_HISTOGRAM.observe(total_duration)
 
