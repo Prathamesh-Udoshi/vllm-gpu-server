@@ -125,8 +125,10 @@ class LLMInferenceEngine:
             )
 
             previous_text = ""
+            previous_num_tokens = 0
 
             async for request_output in results_generator:
+
                 current_time = time.perf_counter()
 
                 if prompt_tokens_count == 0 and hasattr(request_output, "prompt_token_ids"):
@@ -134,22 +136,29 @@ class LLMInferenceEngine:
                     PROMPT_TOKENS_COUNTER.inc(prompt_tokens_count)
 
                 for output in request_output.outputs:
+
+                    current_num_tokens = len(output.token_ids or [])
+                    new_tokens = current_num_tokens - previous_num_tokens
+
                     new_text = output.text[len(previous_text):]
                     previous_text = output.text
 
-                    if new_text:
-                        generated_tokens_count += 1
+                    if new_tokens > 0:
 
                         if first_token_time is None:
                             first_token_time = current_time
-                            ttft = first_token_time - start_time
-                            TTFT_HISTOGRAM.observe(ttft)
-                        else:
-                            if last_token_time:
-                                tpot = current_time - last_token_time
-                                TPOT_HISTOGRAM.observe(tpot)
+                            TTFT_HISTOGRAM.observe(first_token_time - start_time)
+
+                        elif last_token_time is not None:
+                            TPOT_HISTOGRAM.observe(
+                                (current_time - last_token_time) / new_tokens
+                            )
 
                         last_token_time = current_time
+                        previous_num_tokens = current_num_tokens
+                        generated_tokens_count = current_num_tokens
+
+                    if new_text:
 
                         chunk_data = {
                             "id": f"chatcmpl-{request_id}",
@@ -159,14 +168,15 @@ class LLMInferenceEngine:
                             "choices": [
                                 {
                                     "index": 0,
-                                    "delta": {"content": new_text},
+                                    "delta": {
+                                        "content": new_text
+                                    },
                                     "finish_reason": output.finish_reason
                                 }
                             ]
                         }
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
 
-            yield "data: [DONE]\n\n"
+                        yield f"data: {json.dumps(chunk_data)}\n\n"  
 
             total_duration = time.perf_counter() - start_time
             REQUEST_LATENCY_HISTOGRAM.observe(total_duration)
@@ -208,8 +218,7 @@ class LLMInferenceEngine:
 
             final_output = None
             async for request_output in results_generator:
-                final_output = request_output
-
+                final_output = request_output                                                                  
             total_duration = time.perf_counter() - start_time
             REQUEST_LATENCY_HISTOGRAM.observe(total_duration)
 
