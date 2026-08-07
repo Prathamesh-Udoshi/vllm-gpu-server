@@ -20,26 +20,28 @@ Building a self-hosted LLM inference platform requires balancing **throughput, l
                                 |      Nginx Reverse Proxy          |
                                 |  (Rate Limit, SSE Buffering OFF)  |
                                 +-----------------------------------+
-                                                  |
-                                                  v
-                                +-----------------------------------+
-                                |        FastAPI Gateway            |
-                                | (API Key, Request ID, Tracing)    |
-                                +-----------------------------------+
-                                                  |
-                                                  v
-                                +-----------------------------------+
-                                |       vLLM AsyncLLMEngine         |
-                                | (PagedAttention, Prefix Cache)    |
-                                +-----------------------------------+
-                                                  |
-                         +------------------------+------------------------+
-                         |                                                 |
-                         v                                                 v
-        +----------------------------------+             +----------------------------------+
-        |   Host Persistent Storage        |             |  NVIDIA GPU (T4 / L4 / A10G)     |
-        | (~/.cache/huggingface - Persistent)|             |  (Paged VRAM Blocks & Tensor Cores)|
-        +----------------------------------+             +----------------------------------+
+                                  |               |               |
+                    +-------------+               |               +-------------+
+                    | /v1/ & /health/             | /prometheus/                | /grafana/
+                    v                             v                             v
+  +-----------------------------------+ +-------------------+         +-------------------+
+  |        FastAPI Gateway            | | Prometheus Server |         | Grafana Dashboard |
+  | (API Key, Request ID, Tracing)    | | (Metrics Scraper)|         | (Live Analytics)  |
+  +-----------------------------------+ +-------------------+         +-------------------+
+                    |                             ^                             ^
+                    v                             |                             |
+  +-----------------------------------+           |                             |
+  |       vLLM AsyncLLMEngine         |-----------+-----------------------------+
+  | (PagedAttention, Prefix Cache)    |
+  +-----------------------------------+
+                    |
+         +----------+----------+
+         |                     |
+         v                     v
++------------------+  +-----------------------------------+
+| Persistent Disk  |  | NVIDIA GPU (T4 / L4 / A10G)       |
+| (HF Model Cache) |  | (Paged VRAM Blocks & Tensor Cores)|
++------------------+  +-----------------------------------+
 ```
 
 ---
@@ -70,16 +72,52 @@ Building a self-hosted LLM inference platform requires balancing **throughput, l
 
 3. **Docker Profiles (`monitoring` & `exporters`)**:
    - Default deployment runs **API + Nginx only**, consuming minimal CPU/RAM.
-   - Prometheus, Grafana, Node Exporter, and DCGM Exporter are enabled only when `PROFILES=monitoring,exporters` is specified.
+   - Prometheus and Grafana are enabled when `PROFILES=monitoring` is specified.
+   - Node Exporter and DCGM Exporter are enabled when `PROFILES=monitoring,exporters` is specified.
 
 ---
 
-## 4. Operational Best Practices & Recovery
+## 4. Security & Authentication Architecture
+
+* **API Key Protection**: Configured via `API_KEY` in `.env`.
+* **Header Support**: Accepts authentication through either:
+  * `X-API-Key: <key>`
+  * `Authorization: Bearer <key>`
+* **CORS Policy**: Configured via `CORS_ORIGINS` setting (`*` or comma-separated list of domains).
+
+---
+
+## 5. Observability & Telemetry Metrics
+
+Custom Prometheus metrics exported from [app/metrics.py](file:///d:/Edutainer/vLLM/app/metrics.py):
+
+| Metric Name | Type | Description |
+| :--- | :--- | :--- |
+| `llm_time_to_first_token_seconds` | Histogram | Time To First Token (TTFT - prefill latency) |
+| `llm_time_per_output_token_seconds` | Histogram | Time Per Output Token (TPOT - decode latency) |
+| `llm_request_duration_seconds` | Histogram | Total end-to-end API request duration |
+| `llm_prompt_tokens_total` | Counter | Total input (prompt) tokens processed |
+| `llm_completion_tokens_total` | Counter | Total output (completion) tokens generated |
+| `llm_requests_total` | Counter | Total API request counter (labels: `status="success"`, `status="error"`) |
+| `llm_num_requests_running` | Gauge | Active requests in execution batch |
+
+Nginx exposes Prometheus at `http://<HOST>/prometheus` and Grafana at `http://<HOST>/grafana`.
+
+---
+
+## 6. Operational Best Practices & Recovery
 
 ### Automated Recovery After VM Reboot
 The VM setup script registers a systemd unit (`vllm-platform.service`). When a VM starts or reboots after being stopped, systemd automatically executes `docker compose up -d`, bringing the API server back online.
+
+### Operational CLI Shortcuts (Makefile)
+* **Dev Server**: `make run-dev`
+* **Default Stack**: `make docker-up`
+* **Monitoring Stack**: `make docker-up-monitoring`
+* **Load Test**: `make benchmark`
 
 ### Clean Operations
 * **Safe Update**: `bash gcp/update.sh` (Pulls code updates, rebuilds containers, preserves model cache).
 * **Backup**: `bash gcp/backup.sh` (Backs up `.env` and configuration files).
 * **Cleanup**: `bash gcp/cleanup.sh` (Prunes unused Docker resources without wiping models).
+

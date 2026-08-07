@@ -60,7 +60,7 @@ gcloud compute instances create vllm-gpu-server \
    ```bash
    bash gcp/setup_vm.sh
    ```
-   *This script automatically installs NVIDIA CUDA Driver 535, Docker Engine, and NVIDIA Container Toolkit.*
+   *This script automatically installs NVIDIA CUDA Driver 535, Docker Engine, NVIDIA Container Toolkit, and registers `vllm-platform.service` for auto-boot recovery.*
 
 4. Verify GPU status:
    ```bash
@@ -71,14 +71,24 @@ gcloud compute instances create vllm-gpu-server \
 
 ## Step 4: Launch the Production vLLM Stack
 
-Run the one-click deployment script:
+### Launch Minimal Stack (API + Nginx)
 ```bash
-bash gcp/deploy_vm.sh "Qwen/Qwen2.5-0.5B-Instruct" ""
+bash gcp/deploy_vm.sh "Qwen/Qwen2.5-0.5B-Instruct" "" ""
+```
+
+### Launch with Full Observability (API + Nginx + Prometheus + Grafana)
+```bash
+bash gcp/deploy_vm.sh "Qwen/Qwen2.5-0.5B-Instruct" "" "monitoring"
+```
+
+### Launch with Observability & Hardware Exporters (Node + DCGM Exporters)
+```bash
+bash gcp/deploy_vm.sh "Qwen/Qwen2.5-0.5B-Instruct" "" "monitoring,exporters"
 ```
 
 To run a 4-bit AWQ quantized model (e.g. Qwen2.5 7B AWQ):
 ```bash
-bash gcp/deploy_vm.sh "Qwen/Qwen2.5-7B-Instruct-AWQ" "awq"
+bash gcp/deploy_vm.sh "Qwen/Qwen2.5-7B-Instruct-AWQ" "awq" "monitoring"
 ```
 
 ---
@@ -92,8 +102,19 @@ bash gcp/deploy_vm.sh "Qwen/Qwen2.5-7B-Instruct-AWQ" "awq"
 
 2. Test Chat Completion Token Stream:
    ```bash
+   # Standard request without API key
    curl -X POST http://localhost/v1/chat/completions \
      -H "Content-Type: application/json" \
+     -d '{
+       "model": "Qwen/Qwen2.5-0.5B-Instruct",
+       "messages": [{"role": "user", "content": "Explain how PagedAttention works in vLLM."}],
+       "stream": true
+     }'
+
+   # Request with API key (if configured in .env)
+   curl -X POST http://localhost/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_SECRET_API_KEY" \
      -d '{
        "model": "Qwen/Qwen2.5-0.5B-Instruct",
        "messages": [{"role": "user", "content": "Explain how PagedAttention works in vLLM."}],
@@ -107,12 +128,14 @@ bash gcp/deploy_vm.sh "Qwen/Qwen2.5-7B-Instruct-AWQ" "awq"
    ```
 
 4. View Live Performance Metrics in Grafana:
-   * Open SSH tunnel for port 3000:
+   * **Via Direct HTTP**: Open `http://<YOUR_VM_IP>/grafana` (Login: `admin` / `admin`).
+   * **Via Prometheus Subpath**: Open `http://<YOUR_VM_IP>/prometheus`.
+   * **Via SSH Tunnel (Optional Security)**:
      ```bash
      gcloud compute ssh vllm-gpu-server --zone=us-central1-a -- -L 3000:localhost:3000 -L 9090:localhost:9090
      ```
-   * Open your browser to `http://localhost:3000` (Login: `admin` / `admin`).
-   * Import dashboard from `monitoring/grafana/dashboards/llm_performance.json`.
+     Open `http://localhost:3000` locally.
+   * Import pre-built dashboard from `monitoring/grafana/dashboards/llm_performance.json`.
 
 ---
 
@@ -126,3 +149,4 @@ When ready to resume:
 ```bash
 gcloud compute instances start vllm-gpu-server --zone=us-central1-a
 ```
+

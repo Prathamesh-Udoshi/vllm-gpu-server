@@ -42,8 +42,19 @@ echo "Service Endpoint: ${SERVICE_URL}"
 
 Test streaming endpoint:
 ```bash
+# Standard request without API key
 curl -X POST "${SERVICE_URL}/v1/chat/completions" \
   -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "messages": [{"role": "user", "content": "What are the benefits of serverless GPUs?"}],
+    "stream": true
+  }'
+
+# Request with API Key (if configured via env var API_KEY)
+curl -X POST "${SERVICE_URL}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_SECRET_API_KEY" \
   -d '{
     "model": "Qwen/Qwen2.5-0.5B-Instruct",
     "messages": [{"role": "user", "content": "What are the benefits of serverless GPUs?"}],
@@ -58,3 +69,5 @@ curl -X POST "${SERVICE_URL}/v1/chat/completions" \
 * **`--min-instances=1`**: CRITICAL to prevent cold starts where model weight downloading causes 60-second initial request delays.
 * **`--no-cpu-throttling`**: Ensures continuous CPU background processing for vLLM event loops.
 * **`--memory=16Gi`**: Provides sufficient RAM for PyTorch context and model initialization.
+* **`--gpu=1 --gpu-type=nvidia-l4`**: Allocates 1x NVIDIA L4 (24GB VRAM) for accelerated inference.
+
