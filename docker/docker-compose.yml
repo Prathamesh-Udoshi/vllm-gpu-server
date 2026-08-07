@@ -111,6 +111,11 @@ services:
     profiles: ["exporters"]
     ports:
       - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+    pid: host
     networks:
       - vllm-network
 
