@@ -127,6 +127,8 @@ services:
     ports:
       - "9400:9400"
     runtime: nvidia
+    cap_add: 
+      - SYS_ADMIN
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
