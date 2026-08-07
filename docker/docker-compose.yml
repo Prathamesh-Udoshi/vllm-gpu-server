@@ -119,22 +119,23 @@ services:
     networks:
       - vllm-network
 
-  dcgm-exporter:
-    image: nvidia/dcgm-exporter:latest
-    container_name: vllm-dcgm-exporter
-    restart: unless-stopped
-    profiles: ["exporters"]
-    ports:
-      - "9400:9400"
-    networks:
-      - vllm-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+dcgm-exporter:
+  image: nvidia/dcgm-exporter:4.4.1-4.6.0-ubuntu22.04
+  container_name: vllm-dcgm-exporter
+  restart: unless-stopped
+  profiles: ["exporters"]
+
+  ports:
+    - "9400:9400"
+
+  runtime: nvidia
+
+  environment:
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+  networks:
+    - vllm-network
 
 networks:
   vllm-network:
